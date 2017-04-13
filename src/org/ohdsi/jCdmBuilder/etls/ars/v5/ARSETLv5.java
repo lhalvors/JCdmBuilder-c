@@ -101,7 +101,7 @@ public class ARSETLv5 {
 	public double						qaSampleProbability;	// The sample probability value used to include a patient's records in the QA Sample export
 	
 	// ******************** Process ********************//
-	public void process(String folder, DbSettings dbSettings, int maxPersons) {
+	public void process(String folder, DbSettings dbSettings, int maxPersons, int versionId) {
 		this.folder = folder;
 		loadSettings();
 		extractionDate = StringUtilities.databaseTimeStringToDays(extractionDateStr);
@@ -116,6 +116,14 @@ public class ARSETLv5 {
 		connection.use(dbSettings.database);
 		loadMappings(dbSettings);
 		truncateTables(connection);
+
+		try {
+			connection.execute("TRUNCATE TABLE _version");
+			String date = new SimpleDateFormat("yyyy-MM-dd").format(new Date());
+			connection.execute("INSERT INTO _version (version_id, version_date) VALUES (" + versionId + ", '" + date + "')");
+		} catch (Exception e) {
+
+		}
 
 		personCount = 0;
 		personId = 0;

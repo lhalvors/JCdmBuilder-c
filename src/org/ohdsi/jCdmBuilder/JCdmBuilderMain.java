@@ -488,14 +488,14 @@ public class JCdmBuilderMain {
 		etlTypePanel.setLayout(new BoxLayout(etlTypePanel, BoxLayout.X_AXIS));
 		etlTypePanel.setBorder(BorderFactory.createTitledBorder("ETL type"));
 		etlType = new JComboBox<String>(
-				new String[] { "1. Load CSV files in CDM format to server", "2a. ARS -> OMOP CDM V4", "2b. ARS -> OMOP CDM V5", "3. HCUP -> OMOP CDM V4", "4. HCUP -> OMOP CDM V5" });
+				new String[] { "1. Load CSV files in CDM format to server", "2. ARS -> OMOP CDM V4", "3. HCUP -> OMOP CDM V4", "4. HCUP -> OMOP CDM V5", "5. ARS -> OMOP CDM V5" });
 		etlType.setToolTipText("Select the appropriate ETL process");
 		etlType.addItemListener(new ItemListener() {
 			
 			@Override
 			public void itemStateChanged(ItemEvent arg0) {
 				String selection = arg0.getItem().toString();
-				if (selection.equals("1. Load CSV files in CDM format to server") || selection.equals("2a. ARS -> OMOP CDM V4") || selection.equals("2b. ARS -> OMOP CDM V5"))
+				if (selection.equals("1. Load CSV files in CDM format to server") || selection.equals("2. ARS -> OMOP CDM V4") || selection.equals("5. ARS -> OMOP CDM V5"))
 					((CardLayout) sourceCards.getLayout()).show(sourceCards, SOURCEFOLDER);
 				else
 					((CardLayout) sourceCards.getLayout()).show(sourceCards, SOURCEDATABASE);
@@ -997,19 +997,19 @@ public class JCdmBuilderMain {
 					if (dbSettings != null)
 						etl.process(sourceFolderField.getText(), dbSettings, maxPersons, Integer.parseInt(versionIdField.getText()));
 				}
-				if (etlType.getSelectedItem().equals("2a. ARS -> OMOP CDM V4")) {
+				if (etlType.getSelectedItem().equals("2. ARS -> OMOP CDM V4")) {
 					ARSETL etl = new ARSETL();
 					DbSettings dbSettings = getTargetDbSettings();
 					testConnection(dbSettings, false);
 					if (dbSettings != null)
 						etl.process(sourceFolderField.getText(), dbSettings, maxPersons);
 				}
-				if (etlType.getSelectedItem().equals("2b. ARS -> OMOP CDM V5")) {
+				if (etlType.getSelectedItem().equals("5. ARS -> OMOP CDM V5")) {
 					ARSETLv5 etl = new ARSETLv5();
 					DbSettings dbSettings = getTargetDbSettings();
 					testConnection(dbSettings, false);
 					if (dbSettings != null)
-						etl.process(sourceFolderField.getText(), dbSettings, maxPersons);
+						etl.process(sourceFolderField.getText(), dbSettings, maxPersons, Integer.parseInt(versionIdField.getText()));
 				}
 				if (etlType.getSelectedItem().equals("3. HCUP -> OMOP CDM V4")) {
 					HCUPETL etl = new HCUPETL();
