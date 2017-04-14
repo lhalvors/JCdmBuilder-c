@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.Map;
 //import java.util.concurrent.TimeUnit;
 
+import org.ohdsi.databases.DbType;
 import org.ohdsi.databases.RichConnection;
 import org.ohdsi.jCdmBuilder.DbSettings;
 import org.ohdsi.jCdmBuilder.EtlReport;
@@ -150,17 +151,18 @@ public class GenomedicsETLtoV5 {
 				targetDbSettings.dbType);
 		targetConnection.setContext(this.getClass());
 		targetConnection.use(targetDbSettings.database);
+		List<String> tableNames = targetConnection.getTableNames(targetDbSettings.database);
 
+		if (!tableNames.contains("cost"))
+			createCostTable(targetDbSettings);
+		if (!tableNames.contains("_version"))
+			targetConnection.executeResource("CREATE TABLE _version(version_id INT,version_date DATE);");	
+		
 		truncateTables(targetConnection);
 		this.folder = folder;
 
-		try {
-			targetConnection.execute("TRUNCATE TABLE _version");
-			String date = new SimpleDateFormat("yyyy-MM-dd").format(new Date());
-			targetConnection.execute("INSERT INTO _version (version_id, version_date) VALUES (" + versionId + ", '" + date + "')");
-		} catch (Exception e) {
-			StringUtilities.outputWithTime("No _version table found");
-		}
+		String date = new SimpleDateFormat("yyyy-MM-dd").format(new Date());
+		targetConnection.execute("INSERT INTO _version (version_id, version_date) VALUES (" + versionId + ", '" + date + "')");
 		
 		personId = 0;
 		observationPeriodId = 0;
@@ -287,16 +289,16 @@ public class GenomedicsETLtoV5 {
 	//********************  ********************//
 	private void populateCdmSourceTable() {
 		SimpleDateFormat df = new SimpleDateFormat("yyyy-MM-dd");
-		targetConnection.executeResource("PopulateCdmSourceTable.sql", "@today", df.format(new Date()));
+		targetConnection.executeResource("sql/PopulateCdmSourceTable.sql", "@today", df.format(new Date()));
 	}
 
 	//********************  ********************//
 	private void truncateTables(RichConnection targetConnection) {
 		StringUtilities.outputWithTime("Truncating tables");
 		String[] tables = new String[] { "attribute_definition", "care_site", "cdm_source", "cohort", "cohort_attribute", "cohort_definition", "condition_era",
-				"condition_occurrence", "death", "device_cost", "device_exposure", "dose_era", "drug_cost", "drug_era", "drug_exposure", "fact_relationship",
-				"location", "measurement", "note", "observation", "observation_period", "payer_plan_period", "person", "procedure_cost",
-				"procedure_occurrence", "provider", "specimen", "visit_cost", "visit_occurrence" };
+				"condition_occurrence", "death", "cost", "device_exposure", "dose_era", "drug_era", "drug_exposure", "fact_relationship",
+				"location", "measurement", "note", "observation", "observation_period", "payer_plan_period", "person",
+				"procedure_occurrence", "provider", "specimen", "visit_occurrence" };
 		for (String table : tables)
 			targetConnection.execute("TRUNCATE TABLE " + table);	}
 
@@ -320,7 +322,7 @@ public class GenomedicsETLtoV5 {
 
 		System.out.println("- Loading ATC to concept_id mapping");
 		atcToConcept = new CodeToDomainConceptMap("ATC to concept_id mapping", "Drug");
-		for (Row row : targetConnection.queryResource("atcToRxNorm.sql")) {
+		for (Row row : targetConnection.queryResource("sql/atcToRxNorm.sql")) {
 			row.upperCaseFieldNames();
 			atcToConcept.add(row.get("SOURCE_CODE"), row.get("SOURCE_NAME"), row.getInt("SOURCE_CONCEPT_ID"), row.getInt("TARGET_CONCEPT_ID"),
 					row.get("TARGET_CODE"), row.get("TARGET_NAME"), row.get("DOMAIN_ID"));
@@ -328,7 +330,7 @@ public class GenomedicsETLtoV5 {
 
 		System.out.println("- Loading ICD-9 to concept_id mapping");
 		icd9ToConcept = new CodeToDomainConceptMap("ICD-9 to concept_id mapping", "Condition");
-		for (Row row : targetConnection.queryResource("icd9ToConditionProcMeasObsDevice.sql")) {
+		for (Row row : targetConnection.queryResource("sql/icd9ToConditionProcMeasObsDevice.sql")) {
 			row.upperCaseFieldNames();
 			icd9ToConcept.add(row.get("SOURCE_CODE"), row.get("SOURCE_NAME"), row.getInt("SOURCE_CONCEPT_ID"), row.getInt("TARGET_CONCEPT_ID"),
 					row.get("TARGET_CODE"), row.get("TARGET_NAME"), row.get("DOMAIN_ID"));
@@ -336,7 +338,7 @@ public class GenomedicsETLtoV5 {
 
 		System.out.println("- Loading ICD-9 Procedure to concept_id mapping");
 		icd9ProcToConcept = new CodeToDomainConceptMap("ICD-9 Procedure to concept_id mapping", "Procedure");
-		for (Row row : targetConnection.queryResource("icd9ProcToProcMeasObsDrugCondition.sql")) {
+		for (Row row : targetConnection.queryResource("sql/icd9ProcToProcMeasObsDrugCondition.sql")) {
 			row.upperCaseFieldNames();
 			icd9ProcToConcept.add(row.get("SOURCE_CODE"), row.get("SOURCE_NAME"), row.getInt("SOURCE_CONCEPT_ID"), row.getInt("TARGET_CONCEPT_ID"),
 					row.get("TARGET_CODE"), row.get("TARGET_NAME"), row.get("DOMAIN_ID"));
@@ -344,7 +346,7 @@ public class GenomedicsETLtoV5 {
 
 		System.out.println("- Loading HS_CODE to concept_id mapping");
 		hsCodeToConcept = new CodeToDomainConceptMap("HS_CODE to concept_id mapping", "Procedure");
-		for (Row row : new ReadCSVFileWithHeader(this.getClass().getResourceAsStream("HS_CODE.csv"))) {
+		for (Row row : new ReadCSVFileWithHeader(this.getClass().getResourceAsStream("csv/HS_CODE.csv"))) {
 			row.upperCaseFieldNames();
 			hsCodeToConcept.add(row.get("HS_CODE"), row.get("MEANING"), 0, row.getInt("CONCEPT_ID"),
 					row.get("CONCEPT_CODE"), row.get("CONCEPT_NAME"), row.get("DOMAIN_ID"));
@@ -352,7 +354,7 @@ public class GenomedicsETLtoV5 {
 
 		System.out.println("- Loading UNITA_MIS_DDD to concept mapping");
 		umdToConcept = new CodeToConceptMap("UNITA_MIS_DDD to concept mapping");
-		for (Row row : new ReadCSVFileWithHeader(this.getClass().getResourceAsStream("UNITA_MIS_DDD.csv"))) {
+		for (Row row : new ReadCSVFileWithHeader(this.getClass().getResourceAsStream("csv/UNITA_MIS_DDD.csv"))) {
 			row.upperCaseFieldNames();
 			umdToConcept.add(row.get("UNITA_MIS_DDD"), row.get("MEANING"), row.getInt("CONCEPT_ID"), row.get("CONCEPT_CODE"),
 					row.get("CONCEPT_NAME"));
@@ -360,7 +362,7 @@ public class GenomedicsETLtoV5 {
 
 		System.out.println("- Loading VIA to concept mapping");
 		viaToConcept = new CodeToConceptMap("VIA to concept mapping");
-		for (Row row : new ReadCSVFileWithHeader(this.getClass().getResourceAsStream("VIA.csv"))) {
+		for (Row row : new ReadCSVFileWithHeader(this.getClass().getResourceAsStream("csv/VIA.csv"))) {
 			row.upperCaseFieldNames();
 			viaToConcept.add(row.get("VIA"), row.get("MEANING"), row.getInt("CONCEPT_ID"), row.get("CONCEPT_CODE"),
 					row.get("CONCEPT_NAME"));
@@ -378,7 +380,7 @@ public class GenomedicsETLtoV5 {
 
 		System.out.println("- Loading codifa to DURG_DDD mapping");
 		codifaToDurgDDD = new CodeFmcToDurgMap("Specialty to concept mapping");
-		for (Row row : targetConnection.queryResource("codifaToDurgDdd.sql")) {
+		for (Row row : targetConnection.queryResource("sql/codifaToDurgDdd.sql")) {
 			row.upperCaseFieldNames();
 			codifaToDurgDDD.add(row.get("COD_FARMACO"), row.get("DESCRIZIONE"), row.get("COD_ATC5"), row.get("VIA"), 
 					getNumValue(row.get("QUANT_PA")), getNumValue(row.get("UNITA_POSOLOGICA")), row.get("UNITA_MIS_DDD"), getNumValue(row.get("GIORNI")) );
@@ -920,22 +922,28 @@ public class GenomedicsETLtoV5 {
 							// *********** drug_cost ******************
 							if ((teNpezzi != null) && (euroNum != null)) {
 								Row drugCost = new Row();
-								drugCost.add("drug_cost_id", drugCostId++);
-								drugCost.add("drug_exposure_id", drugExposureId);
+								drugCost.add("cost_id", drugCostId++);
+								drugCost.add("cost_event_id", drugExposureId);
+								drugCost.add("cost_domain_id", "Drug");
+								drugCost.add("cost_type_concept_id", 0);
 								drugCost.add("currency_concept_id", 44818568); // Euro
-								drugCost.add("paid_copay", "");
-								drugCost.add("paid_coinsurance", "");
-								drugCost.add("paid_toward_deductible", "");
-								drugCost.add("paid_by_payer", "");
-								drugCost.add("paid_by_coordination_benefits", "");
-								drugCost.add("total_out_of_pocket", "");
+								drugCost.add("total_charge", "");
+								drugCost.add("total_cost", "");
 								long totalPaid = (long) (euroNum * teNpezzi);
 								drugCost.add("total_paid", totalPaid);
-								drugCost.add("ingredient_cost", "");
-								drugCost.add("dispensing_fee", "");
-								drugCost.add("average_wholesale_price", "");
+								drugCost.add("paid_by_payer", "");
+								drugCost.add("paid_by_patient", "");
+								drugCost.add("paid_patient_copay", "");
+								drugCost.add("paid_patient_coinsurance", "");
+								drugCost.add("paid_patient_deductible", "");
+								drugCost.add("paid_by_primary", "");
+								drugCost.add("paid_ingredient_cost", "");
+								drugCost.add("paid_dispensing_fee", "");
 								drugCost.add("payer_plan_period_id", "");
-								tableToRows.put("drug_cost", drugCost);
+								drugCost.add("amount_allowed", "");
+								drugCost.add("revenue_code_concept_id", "");
+								drugCost.add("revenue_code_source_value", "");
+								tableToRows.put("cost", drugCost);
 							}
 							break;
 						default:
@@ -1147,20 +1155,27 @@ public class GenomedicsETLtoV5 {
 							euroNum = Double.valueOf(tmpS);
 						if (euroNum != null) {
 							Row procedureCost = new Row();
-							procedureCost.add("procedure_cost_id", procedureCostId++);
-							procedureCost.add("procedure_occurrence_id", procedureOccurrenceId);
+							procedureCost.add("cost_id", procedureCostId++);
+							procedureCost.add("cost_event_id", procedureOccurrenceId);
+							procedureCost.add("cost_domain_id", "Procedure");
+							procedureCost.add("cost_type_concept_id", 0);
 							procedureCost.add("currency_concept_id", 44818568); // Euro
-							procedureCost.add("paid_copay", "");
-							procedureCost.add("paid_coinsurance", "");
-							procedureCost.add("paid_toward_deductible", ""); 
-							procedureCost.add("paid_by_payer", "");
-							procedureCost.add("paid_by_coordination_benefits", "");
-							procedureCost.add("total_out_of_pocket", "");
+							procedureCost.add("total_charge", "");
+							procedureCost.add("total_cost", "");
 							procedureCost.add("total_paid", euroNum);
-							procedureCost.add("revenue_code_concept_id", "");
+							procedureCost.add("paid_by_payer", "");
+							procedureCost.add("paid_by_patient", "");
+							procedureCost.add("paid_patient_copay", "");
+							procedureCost.add("paid_patient_coinsurance", "");
+							procedureCost.add("paid_patient_deductible", "");
+							procedureCost.add("paid_by_primary", "");
+							procedureCost.add("paid_ingredient_cost", "");
+							procedureCost.add("paid_dispensing_fee", "");
 							procedureCost.add("payer_plan_period_id", "");
+							procedureCost.add("amount_allowed", "");
+							procedureCost.add("revenue_code_concept_id", "");
 							procedureCost.add("revenue_code_source_value", "");
-							tableToRows.put("procedure_cost", procedureCost);
+							tableToRows.put("cost", procedureCost);
 						}
 						break;
 
@@ -1314,22 +1329,28 @@ public class GenomedicsETLtoV5 {
 
 					if ((riQta != null) && (euroNum != null)) {
 						Row procedureCost = new Row();
-						procedureCost.add("procedure_cost_id", procedureCostId++);
-						procedureCost.add("procedure_occurrence_id", procedureOccurrenceId);
+						procedureCost.add("cost_id", procedureCostId++);
+						procedureCost.add("cost_event_id", procedureOccurrenceId);
+						procedureCost.add("cost_domain_id", "Procedure");
+						procedureCost.add("cost_type_concept_id", 0);
 						procedureCost.add("currency_concept_id", 44818568); // Euro
-						procedureCost.add("paid_copay", "");
-						procedureCost.add("paid_coinsurance", "");
-						procedureCost.add("paid_toward_deductible", ""); 
-						procedureCost.add("paid_by_payer", "");
-						procedureCost.add("paid_by_coordination_benefits", "");
-						procedureCost.add("total_out_of_pocket", "");
+						procedureCost.add("total_charge", "");
+						procedureCost.add("total_cost", "");
 						procedureCost.add("total_paid", (riQta * euroNum));
-						procedureCost.add("revenue_code_concept_id", "");
+						procedureCost.add("paid_by_payer", "");
+						procedureCost.add("paid_by_patient", "");
+						procedureCost.add("paid_patient_copay", "");
+						procedureCost.add("paid_patient_coinsurance", "");
+						procedureCost.add("paid_patient_deductible", "");
+						procedureCost.add("paid_by_primary", "");
+						procedureCost.add("paid_ingredient_cost", "");
+						procedureCost.add("paid_dispensing_fee", "");
 						procedureCost.add("payer_plan_period_id", "");
+						procedureCost.add("amount_allowed", "");
+						procedureCost.add("revenue_code_concept_id", "");
 						procedureCost.add("revenue_code_source_value", "");
-						tableToRows.put("procedure_cost", procedureCost);
+						tableToRows.put("cost", procedureCost);
 					}
-
 					break;
 
 				case "Device":
@@ -1358,18 +1379,27 @@ public class GenomedicsETLtoV5 {
 
 					if ((riQta != null) && (euroNum != null)) {
 						Row deviceCost = new Row();
-						deviceCost.add("device_cost_id", deviceCostId++);
-						deviceCost.add("device_exposure_id", deviceExposureId);
+						deviceCost.add("cost_id", deviceCostId++);
+						deviceCost.add("cost_event_id", deviceExposureId);
+						deviceCost.add("cost_domain_id", "Device");
+						deviceCost.add("cost_type_concept_id", 0);
 						deviceCost.add("currency_concept_id", 44818568); // Euro
-						deviceCost.add("paid_copay", "");
-						deviceCost.add("paid_coinsurance", "");
-						deviceCost.add("paid_toward_deductible", ""); 
-						deviceCost.add("paid_by_payer", "");
-						deviceCost.add("paid_by_coordination_benefits", "");
-						deviceCost.add("total_out_of_pocket", "");
+						deviceCost.add("total_charge", "");
+						deviceCost.add("total_cost", "");
 						deviceCost.add("total_paid", (riQta * euroNum));
+						deviceCost.add("paid_by_payer", "");
+						deviceCost.add("paid_by_patient", "");
+						deviceCost.add("paid_patient_copay", "");
+						deviceCost.add("paid_patient_coinsurance", "");
+						deviceCost.add("paid_patient_deductible", "");
+						deviceCost.add("paid_by_primary", "");
+						deviceCost.add("paid_ingredient_cost", "");
+						deviceCost.add("paid_dispensing_fee", "");
 						deviceCost.add("payer_plan_period_id", "");
-						tableToRows.put("device_cost", deviceCost);
+						deviceCost.add("amount_allowed", "");
+						deviceCost.add("revenue_code_concept_id", "");
+						deviceCost.add("revenue_code_source_value", "");
+						tableToRows.put("cost", deviceCost);
 					}
 					break;
 
@@ -1464,7 +1494,20 @@ public class GenomedicsETLtoV5 {
 			}
 		}
 	}
-		
+
+	//********************  ********************//
+	private void createCostTable(DbSettings dbSettings) {
+		String sqlFile = "sql/CreateCostTable - SQL Server.sql";
+		if (dbSettings.dbType == DbType.ORACLE) {
+			sqlFile = "sql/CreateCostTable - SQL Server.sql";
+		} else if (dbSettings.dbType == DbType.MSSQL) {
+			sqlFile = "sql/CreateCostTable - SQL Server.sql";
+		} else if (dbSettings.dbType == DbType.POSTGRESQL) {
+			sqlFile = "sql/CreateCostTable - PostgreSQL.sql";
+		}
+		targetConnection.executeResource(sqlFile);
+	}
+
 	//********************  ********************//
 	private Long extractOperatorConceptId(String val) {
 		Long conceptId = null;
